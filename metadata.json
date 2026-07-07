@@ -1,0 +1,6 @@
+{
+  "name": "Slither.io Game",
+  "description": "A highly-polished Slither.io clone in React and TypeScript with offline singleplayer bots, online real-time multiplayer, skin customization, and a global leaderboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
