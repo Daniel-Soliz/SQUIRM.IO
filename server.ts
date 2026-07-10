@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-
+ 
 import express from 'express';
 import http from 'http';
 import path from 'path';
@@ -10,17 +10,17 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
-
+ 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const HIGHSCORES_FILE = path.join(process.cwd(), 'highscores.json');
-
+ 
 // Initialize Express, HTTP, and WebSocket Servers
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000; // Render define PORT automaticamente em produção
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
-
+ 
 server.on('upgrade', (request, socket, head) => {
   try {
     const url = new URL(request.url || '', `http://${request.headers.host || 'localhost'}`);
@@ -33,12 +33,12 @@ server.on('upgrade', (request, socket, head) => {
     console.error('Error handling WebSocket upgrade:', err);
   }
 });
-
+ 
 app.use(express.json());
-
+ 
 // In-memory counter for total matches played today (persisted during server session)
 let matchesToday = 1248;
-
+ 
 // Persistent Global Leaderboard Helpers
 function loadHighscores() {
   try {
@@ -58,7 +58,7 @@ function loadHighscores() {
     { name: 'GlowStar', score: 8500, date: '06/07/2026', mode: 'online' },
   ];
 }
-
+ 
 function saveHighscores(scores: any[]) {
   try {
     fs.writeFileSync(HIGHSCORES_FILE, JSON.stringify(scores.slice(0, 20), null, 2), 'utf8');
@@ -66,19 +66,19 @@ function saveHighscores(scores: any[]) {
     console.error("Error writing highscores file:", e);
   }
 }
-
+ 
 // REST Endpoints
 app.get('/api/highscores', (req, res) => {
   const scores = loadHighscores();
   res.json(scores.sort((a: any, b: any) => b.score - a.score).slice(0, 10));
 });
-
+ 
 app.post('/api/highscores', (req, res) => {
   const newEntry = req.body;
   if (!newEntry || !newEntry.name || typeof newEntry.score !== 'number') {
     return res.status(400).json({ error: 'Invalid highscore entry data' });
   }
-
+ 
   const scores = loadHighscores();
   scores.push({
     name: newEntry.name,
@@ -86,13 +86,13 @@ app.post('/api/highscores', (req, res) => {
     date: newEntry.date || new Date().toLocaleDateString('pt-BR'),
     mode: newEntry.mode || 'online'
   });
-
+ 
   scores.sort((a: any, b: any) => b.score - a.score);
   saveHighscores(scores);
-
+ 
   res.json({ success: true, scores: scores.slice(0, 10) });
 });
-
+ 
 // Dynamic dashboard statistics
 app.get('/api/stats', (req, res) => {
   const scores = loadHighscores();
@@ -104,16 +104,16 @@ app.get('/api/stats', (req, res) => {
     highestScore: highest
   });
 });
-
+ 
 app.post('/api/stats/match', (req, res) => {
   matchesToday++;
   res.json({ success: true, matchesToday });
 });
-
+ 
 app.get('/api/online-players', (req, res) => {
   res.json({ count: players.size });
 });
-
+ 
 // Multiplayer WebSocket Coordination
 interface OnlinePlayer {
   id: string;
@@ -125,7 +125,7 @@ interface OnlinePlayer {
   angle: number;
   isBoosting: boolean;
 }
-
+ 
 interface FoodDot {
   id: string;
   x: number;
@@ -133,11 +133,11 @@ interface FoodDot {
   color: string;
   value: number;
 }
-
+ 
 const players = new Map<string, OnlinePlayer>();
 const sharedFood: FoodDot[] = [];
 const ARENA_RADIUS = 2000;
-
+ 
 // Spawn initial food layout
 const FOOD_COLORS = ['#10b981', '#3b82f6', '#ef4444', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#eab308'];
 function spawnFood(count: number) {
@@ -154,20 +154,20 @@ function spawnFood(count: number) {
   }
 }
 spawnFood(500); // 500 initial persistent food items
-
+ 
 wss.on('connection', (ws: WebSocket) => {
   const playerId = `p_${Math.random().toString(36).substring(2, 9)}`;
   let joined = false;
-
+ 
   ws.on('message', (message: string) => {
     try {
       const msg = JSON.parse(message);
-
+ 
       if (msg.type === 'ping') {
         ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
         return;
       }
-
+ 
       if (msg.type === 'join') {
         // Player joins the active session
         joined = true;
@@ -176,12 +176,12 @@ wss.on('connection', (ws: WebSocket) => {
         const dist = Math.sqrt(Math.random()) * (ARENA_RADIUS - 400);
         const startX = Math.cos(angle) * dist;
         const startY = Math.sin(angle) * dist;
-
+ 
         const initialSegments = [];
         for (let i = 0; i < 12; i++) {
           initialSegments.push({ x: startX, y: startY + i * 8 });
         }
-
+ 
         const playerObj: OnlinePlayer = {
           id: playerId,
           ws: ws,
@@ -192,9 +192,9 @@ wss.on('connection', (ws: WebSocket) => {
           angle: -Math.PI / 2,
           isBoosting: false,
         };
-
+ 
         players.set(playerId, playerObj);
-
+ 
         // Welcome package containing details & complete food coordinates
         ws.send(JSON.stringify({
           type: 'welcome',
@@ -203,17 +203,17 @@ wss.on('connection', (ws: WebSocket) => {
           startY: startY,
           food: sharedFood,
         }));
-
+ 
         // Broadcast a join log to other players
         broadcastToOthers(playerId, {
           type: 'playerJoined',
           name: playerObj.name,
         });
       }
-
+ 
       const player = players.get(playerId);
       if (!player) return;
-
+ 
       if (msg.type === 'tick') {
         player.segments = msg.segments || [];
         player.score = msg.score || 10;
@@ -233,13 +233,13 @@ wss.on('connection', (ws: WebSocket) => {
         const index = sharedFood.findIndex(f => f.id === foodId);
         if (index !== -1) {
           sharedFood.splice(index, 1);
-          
+ 
           // Broadcast lightweight removal event
           broadcast({
             type: 'foodEatenBroadcast',
             foodId: foodId,
           });
-
+ 
           // Spawn a replacements
           const angle = Math.random() * Math.PI * 2;
           const dist = Math.sqrt(Math.random()) * (ARENA_RADIUS - 40);
@@ -251,7 +251,7 @@ wss.on('connection', (ws: WebSocket) => {
             value: Math.floor(Math.random() * 4) + 1,
           };
           sharedFood.push(newFood);
-          
+ 
           broadcast({
             type: 'foodSpawnedBroadcast',
             food: newFood,
@@ -276,24 +276,24 @@ wss.on('connection', (ws: WebSocket) => {
             });
           }
         });
-
+ 
         // Trigger kill rewards for closest player
         findAndRewardKiller(player);
-
+ 
         players.delete(playerId);
       }
     } catch (e) {
       console.error("Error processing WS frame:", e);
     }
   });
-
+ 
   ws.on('close', () => {
     if (players.has(playerId)) {
       players.delete(playerId);
     }
   });
 });
-
+ 
 // Broadcast utilities
 function broadcast(data: any) {
   const jsonStr = JSON.stringify(data);
@@ -303,7 +303,7 @@ function broadcast(data: any) {
     }
   });
 }
-
+ 
 function broadcastToOthers(excludeId: string, data: any) {
   const jsonStr = JSON.stringify(data);
   players.forEach((p, id) => {
@@ -312,15 +312,15 @@ function broadcastToOthers(excludeId: string, data: any) {
     }
   });
 }
-
+ 
 // Reward system for other snakes when player dies nearby
 function findAndRewardKiller(deadPlayer: OnlinePlayer) {
   const deadHead = deadPlayer.segments[0];
   if (!deadHead) return;
-
+ 
   let closestPlayer: OnlinePlayer | null = null;
   let closestDist = 200; // reasonable proximity limit
-
+ 
   players.forEach((p, id) => {
     if (id === deadPlayer.id) return;
     const pHead = p.segments[0];
@@ -332,18 +332,18 @@ function findAndRewardKiller(deadPlayer: OnlinePlayer) {
       }
     }
   });
-
+ 
   if (closestPlayer && (closestPlayer as OnlinePlayer).ws.readyState === WebSocket.OPEN) {
     (closestPlayer as OnlinePlayer).ws.send(JSON.stringify({
       type: 'killNotification',
     }));
   }
 }
-
+ 
 // Continuous Tick synchronization broadcast loop (Runs 25 frames per second)
 setInterval(() => {
   if (players.size === 0) return;
-
+ 
   const playersList = Array.from(players.values()).map(p => ({
     id: p.id,
     name: p.name,
@@ -353,19 +353,19 @@ setInterval(() => {
     angle: p.angle,
     isBoosting: p.isBoosting,
   }));
-
+ 
   const tickPacket = JSON.stringify({
     type: 'serverUpdate',
     players: playersList,
   });
-
+ 
   players.forEach(p => {
     if (p.ws.readyState === WebSocket.OPEN) {
       p.ws.send(tickPacket);
     }
   });
 }, 40);
-
+ 
 // Integrate Vite middleware for development or Static Assets for production
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
@@ -381,11 +381,11 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
-
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server executing successfully on http://localhost:${PORT}`);
+ 
+  server.listen(Number(PORT), '0.0.0.0', () => {
+    console.log(`Server executing successfully on port ${PORT}`);
   });
 }
-
+ 
 startServer();
 export default app;
